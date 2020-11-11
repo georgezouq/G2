@@ -136,6 +136,8 @@ export function createThemeByStylesheet(styleSheet: StyleSheet): LooseObject {
         strokeOpacity: styleSheet.lineBorderOpacity,
         fill: null,
         lineAppendWidth: 10,
+        lineCap: 'round',
+        lineJoin: 'round',
       },
       active: {
         lineWidth: styleSheet.lineActiveBorder,
@@ -1260,7 +1262,7 @@ export function createThemeByStylesheet(styleSheet: StyleSheet): LooseObject {
     },
     pieLabels: {
       labelHeight: 14,
-      offset: 30,
+      offset: 10,
       labelLine: {
         style: {
           lineWidth: styleSheet.labelLineBorder,

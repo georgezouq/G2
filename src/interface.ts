@@ -36,6 +36,7 @@ import {
 import { View } from './chart';
 import { Facet } from './facet';
 import Element from './geometry/element';
+import { PaddingCalCtor } from './chart/layout/padding-cal';
 
 // ============================ 基础类型 ============================
 /** 通用对象 */
@@ -219,8 +220,8 @@ export interface GeometryLabelCfg {
    * 当用户使用了自定义的 label 类型，需要声明具体的 type 类型，否则会使用默认的 label 类型渲染。
    */
   type?: string;
-  /** 相对数据点的偏移距离。 */
-  offset?: number;
+  /** 相对数据点的偏移距离, polar 和 theta 坐标系下可使用百分比字符串。 */
+  offset?: number | string;
   /** label 相对于数据点在 X 方向的偏移距离。 */
   offsetX?: number;
   /** label 相对于数据点在 Y 方向的偏移距离。 */
@@ -239,6 +240,8 @@ export interface GeometryLabelCfg {
    * 当且仅当 `autoRotate` 为 false 时生效，用于设置文本的旋转角度，**弧度制**。
    */
   rotate?: number;
+  /** 标签高度设置，仅当标签类型 type 为 pie 时生效；也可在主题中设置 pieLabels.labelHeight */
+  labelHeight?: number;
   /**
    * 用于设置文本连接线的样式属性，null 表示不展示。
    */
@@ -261,6 +264,21 @@ export interface GeometryLabelCfg {
    * ```
    */
   layout?: GeometryLabelLayoutCfg | GeometryLabelLayoutCfg[];
+  /**
+   * 用于绘制 label 背景
+   */
+  background?: {
+    /**
+     * 背景框 图形属性配置
+     * - fill?: string; 背景框 填充色
+     * - stroke?: string; 背景框 描边色
+     * - lineWidth?: string; 背景框 描边宽度
+     * - radius?: number | number[]; 背景框圆角，支持整数或数组形式
+     */
+    style?: ShapeAttrs;
+    /** 背景框 内边距 */
+    padding?: number | number[];
+  };
   /**
    * 仅当 geometry 为 interval 时生效，指定当前 label 与当前图形的相对位置。
    */
@@ -423,6 +441,8 @@ export interface RegisterShapeFactory {
   readonly defaultShapeType: string;
   /** 返回绘制 shape 所有的关键点集合。 */
   readonly getDefaultPoints?: (pointInfo: ShapePoint) => Point[];
+  /** 获取 shape 的默认绘制样式 */
+  readonly getDefaultStyle?: (geometryTheme: LooseObject) => LooseObject;
   /** 获取 shape 对应的缩略图配置。 */
   readonly getMarker?: (shapeType: string, markerCfg: ShapeMarkerCfg) => ShapeMarkerAttrs;
   /** 创建具体的 G.Shape 实例。 */
@@ -558,6 +578,34 @@ export interface RegionFilterOption extends RegionPositionBaseOption {
   readonly color: string;
   /* 可选,设定regionFilter只对特定geom类型起作用，如apply:['area'] */
   readonly apply?: string[];
+}
+
+/** Shape Annotation 的配置 */
+export interface ShapeAnnotationOption extends AnnotationBaseOption {
+  /** 自定义 Annotation 绘制函数 */
+  render: (
+    container: IGroup,
+    view: View,
+    helpers: { parsePosition: (position: [string | number, string | number] | Datum) => Point }
+  ) => void;
+}
+
+/**
+ * Html Annotation 配置
+ */
+export interface HtmlAnnotationOption extends PointPositionBaseOption {
+  /** 容器元素 */
+  container?: string | HTMLElement;
+  /** 自定义 HTML DOM 元素 */
+  html: string | HTMLElement | ((container: HTMLElement, view: View) => void | string | HTMLElement);
+  /** X 方向对齐 */
+  alignX?: 'left' | 'middle' | 'right';
+  /** Y 方向对齐 */
+  alignY?: 'top' | 'middle' | 'bottom';
+  /** X 方向偏移 */
+  offsetX?: number;
+  /** Y 方向偏移 */
+  offsetY?: number;
 }
 
 // ============================ Chart && View 上的类型定义 ============================
@@ -721,7 +769,8 @@ export interface ViewOption {
 }
 
 /** Chart 构造方法的入参 */
-export interface ChartCfg extends Omit<ViewCfg, 'parent' | 'canvas' | 'foregroundGroup' | 'middleGroup' | 'backgroundGroup' | 'region'> {
+export interface ChartCfg
+  extends Omit<ViewCfg, 'parent' | 'canvas' | 'foregroundGroup' | 'middleGroup' | 'backgroundGroup' | 'region'> {
   /** 指定 chart 绘制的 DOM，可以传入 DOM id，也可以直接传入 dom 实例。 */
   readonly container: string | HTMLElement;
   /** 图表宽度。 */
@@ -748,6 +797,8 @@ export interface ChartCfg extends Omit<ViewCfg, 'parent' | 'canvas' | 'foregroun
    */
   readonly defaultInteractions?: string[];
 }
+
+export type SyncViewPaddingFn = (chart: View, views: View[], PC: PaddingCalCtor) => void;
 
 /** View 构造参数 */
 export interface ViewCfg {
@@ -785,13 +836,15 @@ export interface ViewCfg {
    */
   readonly appendPadding?: ViewAppendPadding;
   /**
-   * 是否同步子 view 的 padding
+   * 是否同步子 view 的 padding，可以是 boolean / SyncViewPaddingFn
    * 比如:
    *  view1 的 padding 10
    *  view2 的 padding 20
-   * 那么两个子 view 的 padding 统一变成最大的 20（后面可以传入 function 自己写策略）
+   * 那么两个子 view 的 padding 统一变成最大的 20.
+   *
+   * 如果是 Funcion，则使用自定义的方式去计算子 view 的 padding，这个函数中去修改所有的 views autoPadding 值
    */
-  readonly syncViewPadding?: boolean;
+  readonly syncViewPadding?: boolean | SyncViewPaddingFn;
   /** 设置 view 实例主题。 */
   readonly theme?: LooseObject | string;
   /**
@@ -1177,7 +1230,7 @@ export interface TooltipCfg {
   /** tooltip 偏移量。 */
   offset?: number;
   /** 支持自定义模板 */
-  customContent?: (title: string, data: any[]) =>  string | HTMLElement;
+  customContent?: (title: string, data: any[]) => string | HTMLElement;
 }
 
 /** 坐标系配置 */

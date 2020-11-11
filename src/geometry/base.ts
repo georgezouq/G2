@@ -1110,7 +1110,7 @@ export default class Geometry extends Base {
 
     let id: string;
     if (type === 'interval' || type === 'schema') {
-      id = xVal;
+      id = `${xVal}`;
     } else if (type === 'line' || type === 'area' || type === 'path') {
       id = type;
     } else {
@@ -1367,6 +1367,9 @@ export default class Geometry extends Base {
     // 获取默认样式
     const theme = this.theme.geometries[this.shapeType];
     cfg.defaultStyle = get(theme, [shapeName, 'default'], {}).style;
+    if (!cfg.defaultStyle && this.getShapeFactory()) {
+      cfg.defaultStyle = this.getShapeFactory().getDefaultStyle(theme);
+    }
 
     const styleOption = this.styleOption;
     if (styleOption) {
